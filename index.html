@@ -213,830 +213,546 @@
   </head>
 
   <body>
-    <div class="container">
-      <!-- Poster at the top -->
-      <!-- Author Info -->
-      <div class="author-info">
-        <h1>World Models: From Dyna-Q to IRIS</h1>
-        <h2 style="color: white; border: none; margin: 10px 0; font-size: 1.3em;">A Deep Dive into World Models and Model-Based Reinforcement Learning</h2>
-        <p><strong>Ayeen Poostforoushan</strong> (<a href="mailto:ayeen.pf@gmail.com" style="color: #f1c40f;">ayeen.pf@gmail.com</a>)<br>
-        <strong>Kooshan Fattah</strong> (<a href="mailto:amirfattah5@gmail.com" style="color: #f1c40f;">amirfattah5@gmail.com</a>)<br>
-        Sharif University of Technology</p>
-      </div>
-      <iframe
-  src="images/poster.pdf"
-  width="100%"
-  height="600px"
-  style="border: none;"
-></iframe>
-      <!-- Blog Content -->
-      <h2>Introduction: The Sample Efficiency Problem</h2>
-      <p>
-        Reinforcement learning faces a fundamental challenge: <strong>sample inefficiency</strong>. State-of-the-art model-free algorithms like PPO, SAC, or Rainbow DQN often require millions of environment interactions to learn even simple tasks. For instance, the original DQN paper reported needing 200 hours of gameplay (approximately 50 million frames) to master Atari games.
-      </p>
+    <!-- START Part 1 -->
+<div class="container">
+  <div class="author-info">
+    <h1>World Models: Dreamer V3, IRIS, and Beyond</h1>
+    <h2 style="color:white;border:none;margin:10px 0;font-size:1.3em;">
+      Deep Model-Based Reinforcement Learning Explained in Depth
+    </h2>
+    <p>
+      <strong>Ayeen Poostforoushan</strong>
+      (<a href="mailto:ayeen.pf@gmail.com" style="color:#f1c40f;">ayeen.pf@gmail.com</a>)<br>
+      <strong>Kooshan Fattah</strong>
+      (<a href="mailto:amirfattah5@gmail.com" style="color:#f1c40f;">amirfattah5@gmail.com</a>)<br>
+      Sharif University of Technology
+    </p>
+  </div>
+
+  <iframe src="images/poster.pdf" width="100%" height="600px" style="border:none;"></iframe>
+
+  <h2>Why the World-Model Idea Matters</h2>
+  <p>
+    Reinforcement learning (RL) gives us a mathematical language for sequential decision-making:
+    an agent interacts with an environment, receives observations and rewards,
+    and gradually improves its policy to maximize long-term return.
+    Yet the remarkable progress of model-free methods such as DQN, PPO, SAC, and Rainbow
+    hides a sobering fact: they are <strong>extraordinarily data-hungry</strong>.
+    The original Atari DQN agent, for example, required roughly fifty million frames—
+    the equivalent of more than two hundred hours of gameplay—to approach human skill.
+    Robots trained with PPO may spend months of real time before mastering a basic locomotion skill.
+  </p>
+  <p>
+    Humans and animals do not learn this way.
+    We mentally simulate: a child learning to stack blocks imagines what will happen if a tower leans too far,
+    a driver predicts how other cars will respond to a lane change,
+    and even simple creatures such as rats exhibit <em>vicarious trial and error</em>
+    when deciding which tunnel to explore.
+    We are constantly building and querying an <strong>internal model of the world</strong>.
+    This simple observation is the seed of the world-model revolution in RL.
+  </p>
+  <p>
+    The central hypothesis is straightforward yet profound:
+    if an agent can learn an accurate probabilistic model of its environment
+    \[p(s_{t+1}\mid s_t,a_t),\qquad p(o_t\mid s_t),\qquad p(r_t\mid s_t)\]
+    and perform planning or policy optimization inside that learned model,
+    it can achieve the same or better behavior with a tiny fraction of real-world interaction.
+    Every advance described below—from Sutton’s Dyna-Q to Dreamer V3 and IRIS—builds on this core idea.
+  </p>
+
+  <div class="section-divider"></div>
+
+  <h2>Dyna-Q: the Conceptual Starting Point</h2>
+  <p>
+    Long before deep networks or GPUs, <strong>Richard Sutton</strong>
+    proposed a simple but powerful scheme called <strong>Dyna-Q</strong> (1990).
+    Its setting was the classical Markov decision process
+    \((S,A,T,R,\gamma)\):
+    states \(S\), actions \(A\), transition probabilities \(T\),
+    reward function \(R\), and discount factor \(\gamma\).
+    The goal was still to learn an optimal action-value function
+    \[
+      Q^\*(s,a) = \max_\pi
+      \mathbb{E}\!\left[\sum_{t=0}^\infty \gamma^t r_t
+      \;\middle|\; s_0=s,\;a_0=a,\;\pi\right].
+    \]
+  </p>
+  <p>
+    Dyna-Q’s insight was to <em>learn a simple environment model on the fly</em>
+    and to use it for extra practice between real interactions.
+    Each time the agent experienced a transition \((s,a,r,s')\),
+    it updated two things:
+    the Q-table entry \(Q(s,a)\) and a one-step model
+    \(M(s,a)\mapsto(s',r)\).
+    Between environment steps it repeatedly
+    <q>dreamed</q> by sampling state–action pairs from its experience
+    and applying Q-learning updates using the model’s predictions.
+    In pseudo-code:
+  </p>
+  <div class="algorithm-box">
+    <div class="algorithm-title">Dyna-Q Algorithm</div>
+    Initialize Q-table and model M<br>
+    For each real interaction:  
+    &nbsp;&nbsp;• Update Q with Q-learning  
+    &nbsp;&nbsp;• Update model M  
+    &nbsp;&nbsp;• For n planning steps: sample (s,a), query M, update Q again
+  </div>
+  <p>
+    This was a revelation: <strong>planning and learning could be unified</strong>.
+    A small number of real experiences could be amplified into a much larger
+    synthetic data set simply by replaying imagined transitions.
+  </p>
+
+  <h3>Power and Limits</h3>
+  <p>
+    Dyna-Q was an elegant demonstration of imagination in reinforcement learning,
+    but it lived in a world of lookup tables and discrete states.
+    Its model \(M\) was nothing more than a dictionary mapping state–action pairs to outcomes.
+    As soon as environments became continuous, high-dimensional, or partially observable,
+    this representation collapsed.
+    The core idea survived, however, and would reappear decades later
+    dressed in deep networks and variational inference.
+  </p>
+
+  <div class="key-insight">
+    <strong>Key conceptual inheritance:</strong>
+    The modern Dreamer and IRIS agents can be viewed
+    as very large, differentiable, neural versions of Dyna-Q’s tiny model,
+    learning in latent spaces instead of tables
+    and generating billions of imagined transitions per day on modern hardware.
+  </div>
+<!-- END Part 1 -->
+<!-- START Part 2 -->
+  <div class="section-divider"></div>
+
+  <h2>The 2018 Breakthrough: Ha &amp; Schmidhuber’s World Models</h2>
+  <p>
+    Nearly three decades after Dyna-Q, the idea of a learned internal simulator
+    was reborn in a dramatically richer context.
+    In <strong>World Models</strong> (2018),
+    David Ha and Jürgen Schmidhuber showed how deep generative modeling could
+    turn raw video-game pixels into a predictive latent space where an agent
+    can <q>dream</q> entire trajectories.
+  </p>
+  <p>
+    The architecture separated perception, dynamics, and decision making:
+  </p>
+  <ul>
+    <li>
+      A <strong>Variational Autoencoder (VAE)</strong>
+      encodes each high-dimensional frame \(x_t\) into a small latent vector \(z_t\),
+      trained with the evidence lower bound
+      \[
+        \mathcal{L}_{VAE}
+        = \mathbb{E}_{q_\phi(z\mid x)}[\log p_\theta(x\mid z)]
+          - \beta \, KL[q_\phi(z\mid x) \| p(z)].
+      \]
+      The prior \(p(z)=\mathcal{N}(0,I)\) and the KL penalty
+      encourage the latent space to be smooth and well structured.
+    </li>
+    <li>
+      A <strong>Mixture Density RNN (MDN-RNN)</strong>
+      predicts a distribution over the next latent state,
+      \[
+        p(z_{t+1}\mid z_t,a_t)
+          = \sum_k \pi_k \,\mathcal{N}\big(\mu_k,\sigma_k^2\big),
+      \]
+      where the LSTM’s hidden state captures temporal context.
+      By mixing Gaussians, it can model the multimodal uncertainty of video-game futures.
+    </li>
+    <li>
+      A simple linear <strong>controller</strong>
+      maps \([z_t,h_t]\) to an action
+      \[
+        a_t = W_c [z_t,h_t] + b_c.
+      \]
+      Instead of gradients, the controller’s parameters are evolved with
+      Covariance Matrix Adaptation Evolution Strategy (CMA-ES),
+      since backpropagating through a stochastic world model is awkward.
+    </li>
+  </ul>
+  <p>
+    These three components were trained in separate phases:
+    first the VAE on collected random rollouts,
+    then the MDN-RNN on latent sequences,
+    and finally the controller entirely inside the learned world.
+    The result was striking: an agent could reach
+    competitive performance in CarRacing and
+    VizDoom tasks without ever seeing new real frames during policy optimization.
+  </p>
+
+  <h3>Conceptual Lessons</h3>
+  <p>
+    Ha and Schmidhuber proved that
+    <strong>accurate latent dynamics are enough for control</strong>.
+    But they also exposed the price of modularity:
+    since the three modules were trained separately and the policy never saw raw pixels,
+    the system could not fine-tune representations end-to-end,
+    and evolution strategies remained sample-inefficient.
+    These shortcomings motivated the next leap forward.
+  </p>
+
+  <div class="section-divider"></div>
+
+  <h2>The Dreamer Family: Differentiable Imagination</h2>
+  <p>
+    <strong>Dreamer</strong> (2019–2020) by Danijar Hafner and collaborators
+    answered the call for end-to-end differentiable world models.
+    Instead of discrete training phases,
+    Dreamer jointly trains a compact latent model and an actor-critic policy
+    by performing policy optimization inside the model itself.
+    The core is the <strong>Recurrent State-Space Model (RSSM)</strong>.
+  </p>
+  <p>
+    The RSSM introduces a deterministic hidden state \(h_t\)
+    alongside a stochastic latent state \(z_t\):
+    \[
+      h_t = f_\theta(h_{t-1},z_{t-1},a_{t-1}),\qquad
+      z_t \sim q_\phi(z_t \mid h_t,x_t).
+    \]
+    The decoder reconstructs observations and predicts rewards,
+    and a KL-regularized objective
+    \[
+      \mathcal{L}_{model} =
+      \mathbb{E}\!\left[
+        \log p_\theta(x_t\mid h_t,z_t)
+        - KL\big[q_\phi(z_t\mid h_t,x_t)\|p_\theta(z_t\mid h_t)\big]
+      \right]
+    \]
+    ensures that the learned latent dynamics match real environment trajectories.
+  </p>
+  <p>
+    Crucially, Dreamer performs <strong>imagined rollouts</strong>
+    in latent space:
+    starting from a real latent pair \((h,z)\),
+    it samples actions from the current policy,
+    predicts the next deterministic and stochastic states,
+    and obtains imagined rewards and values
+    entirely without new environment frames.
+    Because the latent transitions are differentiable,
+    gradients flow through these imagined trajectories,
+    allowing the actor and critic to be updated with standard policy-gradient methods.
+  </p>
+  <div class="algorithm-box">
+    <div class="algorithm-title">Dreamer Training Loop</div>
+    1. Collect real episodes with the current policy.<br>
+    2. Update the world model on the replay buffer.<br>
+    3. Starting from latent states, imagine rollouts of horizon \(H\).<br>
+    4. Optimize actor and critic on these imagined trajectories.<br>
+    5. Repeat imagination and policy updates many times per real step.
+  </div>
+  <p>
+    The effect is dramatic: every real step seeds many cheap imagined steps,
+    driving up sample efficiency without sacrificing gradient-based learning.
+  </p>
+
+  <h3>From Dreamer to Dreamer V2</h3>
+  <p>
+    Dreamer V2 refined the latent representation by replacing Gaussian
+    latents with <strong>categorical discrete variables</strong>.
+    Using a straight-through Gumbel-Softmax estimator,
+    it preserved differentiability while avoiding the <em>posterior collapse</em>
+    sometimes seen with continuous VAEs.
+    Discrete codes proved more stable and expressive,
+    letting each category specialize in different aspects of the environment.
+  </p>
+
+  <div class="section-divider"></div>
+
+  <h2>Dreamer V3: Robust, Domain-General World Models</h2>
+  <p>
+    The third generation, <strong>Dreamer V3</strong> (2023),
+    brought the approach to full maturity,
+    achieving human-level or better scores on 55 Atari games
+    and excelling on difficult continuous-control tasks such as
+    quadruped locomotion and pixel-based manipulation.
+    It introduces several key innovations that stabilize training
+    and extend performance across diverse reward scales and domains.
+  </p>
+  <ul>
+    <li>
+      <strong>Symlog predictions</strong>
+      transform values and rewards with
+      \(\operatorname{symlog}(x)=\operatorname{sign}(x)\ln(|x|+1)\),
+      linear for small \(|x|\) and logarithmic for large,
+      taming gradient explosions from rare but high-magnitude rewards.
+    </li>
+    <li>
+      <strong>Free-bits regularization</strong>
+      ensures every latent dimension carries at least a minimum amount of information
+      by modifying the KL loss to
+      \[KL_{\text{free}}[q\|p] = \max(\beta \cdot KL[q\|p], \text{free bits}).\]
+      This guards against degenerate latents and posterior collapse.
+    </li>
+    <li>
+      A <strong>robust replay buffer</strong>
+      carefully balances on-policy freshness with off-policy diversity,
+      allowing the model to learn long-horizon dependencies without catastrophic forgetting.
+    </li>
+  </ul>
+  <p>
+    The result is a system that can seamlessly handle
+    everything from proprioceptive continuous control to rich visual Atari domains,
+    setting new state-of-the-art results while remaining computationally practical.
+  </p>
+
+  <div class="key-insight">
+    <strong>Takeaway:</strong>
+    With Dreamer V3, the vision of Dyna-Q is fully realized:
+    an agent can gather modest real experience, learn a compact predictive model,
+    and improve its policy almost entirely through internally generated trajectories,
+    with gradient signals propagating through every component.
+  </div>
+<!-- END Part 2 -->
+<!-- START Part 3 -->
+  <div class="section-divider"></div>
+
+  <h2>IRIS: Transformers as World Models</h2>
+  <p>
+    The most recent leap in this lineage is <strong>IRIS</strong> (2023–2025),
+    which replaces recurrent dynamics with a <strong>transformer world model</strong>.
+    Transformers have revolutionized natural language processing and computer vision
+    by capturing long-range dependencies through self-attention.
+    IRIS shows they are equally powerful for modelling environment dynamics.
+  </p>
+  <p>
+    The first stage of IRIS is a <strong>discrete autoencoder</strong>
+    (akin to a VQ-VAE), which converts every input image into a grid of tokens:
+    \[
+      E_\phi : \mathbb{R}^{H\times W\times C}\rightarrow \{1,\dots,K\}^{h\times w}.
+    \]
+    Each token is an index into a learned codebook
+    \(\mathbf{e}\in\mathbb{R}^{K\times d}\).
+    This tokenization is crucial: instead of modeling pixels directly,
+    IRIS predicts the evolution of a discrete sequence of symbols.
+  </p>
+  <p>
+    The transformer then treats the evolving trajectory
+    \((s_0,a_0,r_0,s_1,\dots)\)
+    as a single long sequence of tokens and predicts its continuation:
+    \[
+      p(\mathbf{z}_{t+1}\mid \mathbf{z}_{\le t})
+      = \text{Transformer}(\mathbf{z}_{\le t}).
+    \]
+    Because self-attention sees every past token at once,
+    it can model long-horizon dependencies that RNNs compress into a single vector.
+  </p>
+  <p>
+    IRIS generates imagined rollouts by autoregressively sampling future tokens,
+    alternating between action, reward, and next-state symbols:
+  </p>
+  <div class="algorithm-box">
+    <div class="algorithm-title">IRIS Imagination Rollout</div>
+    1. Start with current state tokens \(\mathbf{z}_t\).<br>
+    2. Append action token \(a_t\) sampled from the policy.<br>
+    3. Predict reward and next state tokens using the transformer.<br>
+    4. Feed them back to produce \(\mathbf{z}_{t+1}\), and repeat for horizon \(H\).
+  </div>
+  <p>
+    Because both the policy \(\pi_\theta(a|\mathbf{s})\) and value function
+    \(V_\psi(\mathbf{s})\) operate directly on the same discrete token space,
+    the entire system remains end-to-end differentiable and easy to scale.
+    Increasing the transformer’s width, depth, or context length
+    translates directly into better predictive and control performance,
+    just as in large language models.
+  </p>
+
+  <h3>Advantages Over RNN-Based World Models</h3>
+  <ul>
+    <li>
+      <strong>Long-range planning:</strong>
+      Attention enables explicit connections across hundreds of steps,
+      supporting multi-minute strategies that would strain an RNN’s memory.
+    </li>
+    <li>
+      <strong>Scalability and transfer:</strong>
+      The same architecture can leverage decades of research on transformer training,
+      distributed optimization, and model scaling.
+    </li>
+    <li>
+      <strong>Sample efficiency:</strong>
+      Benchmarks such as Atari-100k report human-normalized scores above 2.0,
+      exceeding Dreamer V3 while using fewer environment interactions.
+    </li>
+    <li>
+      <strong>Modality agnosticism:</strong>
+      Any sensor—images, audio, proprioception—can be tokenized and added to the same sequence.
+    </li>
+  </ul>
+  <p>
+    In short, IRIS demonstrates that the transformer revolution extends far beyond language and vision,
+    making it a natural backbone for world models in robotics, games, and potentially real-world agents.
+  </p>
+
+  <div class="section-divider"></div>
+
+  <h2>Architectural Evolution and Deep Comparison</h2>
+  <p>
+    The progression from Dyna-Q through Dreamer to IRIS
+    is not merely chronological but conceptual.
+    Each generation attacks a fundamental bottleneck in sample-efficient decision making.
+  </p>
+  <table>
+    <tr>
+      <th>Generation</th>
+      <th>Representation</th>
+      <th>Temporal Model</th>
+      <th>Policy Learning</th>
+      <th>Signature Innovation</th>
+    </tr>
+    <tr>
+      <td>Dyna-Q (1990)</td>
+      <td>Tabular states</td>
+      <td>Lookup table</td>
+      <td>Q-learning + planning</td>
+      <td>Unifying model learning and planning</td>
+    </tr>
+    <tr>
+      <td>World Models (2018)</td>
+      <td>Continuous VAE latent</td>
+      <td>MDN-RNN</td>
+      <td>Evolution Strategies</td>
+      <td>Latent imagination from pixels</td>
+    </tr>
+    <tr>
+      <td>Dreamer V1/V2</td>
+      <td>Gaussian / categorical latents</td>
+      <td>RSSM (recurrent state-space)</td>
+      <td>Actor-Critic with imagined rollouts</td>
+      <td>End-to-end differentiable world models</td>
+    </tr>
+    <tr>
+      <td>Dreamer V3</td>
+      <td>Categorical + symlog scaling</td>
+      <td>RSSM with free-bits regularization</td>
+      <td>Robust actor-critic</td>
+      <td>Stability and domain generalization</td>
+    </tr>
+    <tr>
+      <td>IRIS</td>
+      <td>Discrete tokens</td>
+      <td>Transformer self-attention</td>
+      <td>Transformer-based actor-critic</td>
+      <td>Long-horizon, scalable imagination</td>
+    </tr>
+  </table>
+  <p>
+    The lesson is clear:
+    richer representations (from tabular to discrete tokens),
+    more expressive temporal models (from lookup tables to transformers),
+    and tighter policy–model integration
+    have yielded exponential gains in sample efficiency and capability.
+  </p>
+
+  <div class="section-divider"></div>
+
+  <h2>Beyond Benchmarks: Challenges and Open Problems</h2>
+  <p>
+    Despite spectacular benchmark results,
+    world models face unsolved challenges that keep them at the research frontier.
+  </p>
+  <h3>Model Bias and Distribution Shift</h3>
+  <p>
+    A learned world model is never perfect.
+    Small systematic errors can accumulate during long imagined rollouts,
+    leading to <em>model bias</em>—policies that exploit inaccuracies rather than true dynamics.
+    Distribution shift exacerbates this:
+    as the policy improves, it visits novel states not well-covered in the replay buffer,
+    where the model may be unreliable.
+    Techniques such as conservative value estimation, adaptive horizon selection,
+    or uncertainty-aware planning remain active research areas.
+  </p>
+  <h3>Exploration and Representation Learning</h3>
+  <p>
+    Learning a rich latent space is not automatic.
+    Sparse-reward tasks still pose difficulties because the model
+    may fail to represent rare but crucial states.
+    Intrinsic motivation, curiosity-driven objectives, and contrastive self-supervision
+    are promising but not yet fully solved at scale.
+  </p>
+  <h3>Computation and Energy</h3>
+  <p>
+    While world models reduce <em>environment</em> samples,
+    they often increase <em>compute</em> due to large neural networks
+    and heavy imagination workloads.
+    Training a high-capacity Dreamer or IRIS model can require dozens of GPUs or TPUs.
+    Finding architectures that are both sample- and compute-efficient is essential
+    for deployment on edge robots and embedded systems.
+  </p>
+
+  <div class="section-divider"></div>
+
+  <h2>Future Directions</h2>
+  <p>
+    The poster rightly emphasizes that today’s achievements
+    are just the beginning.
+    Several exciting research frontiers are already visible:
+  </p>
+  <ul>
+    <li>
+      <strong>Multimodal world models:</strong>
+      Future agents must integrate vision, audition, proprioception, and natural language.
+      Token-based transformers like IRIS are naturally suited to fuse such diverse streams.
+    </li>
+    <li>
+      <strong>Hierarchical planning:</strong>
+      Combining world models with goal-setting or option frameworks
+      could enable reasoning over days or weeks of simulated time.
+      A two-level policy
+      \[
+        g_t\sim\pi_{\text{high}}(g|s_t),\qquad
+        a_t\sim\pi_{\text{low}}(a|s_t,g_t)
+      \]
+      is one promising path.
+    </li>
+    <li>
+      <strong>Meta-learning and few-shot adaptation:</strong>
+      Agents should rapidly adapt their internal model to new environments
+      without long retraining.
+      In-context adaptation and model-agnostic meta-learning are key techniques.
+    </li>
+    <li>
+      <strong>Theoretical foundations:</strong>
+      We still lack sharp guarantees on how model accuracy translates
+      into policy performance and on the sample complexity of imagined updates.
+    </li>
+  </ul>
+  <p>
+    As these directions mature, world models may become the
+    standard backbone for truly general-purpose intelligent agents.
+  </p>
+
+  <div class="section-divider"></div>
+
+  <h2>Concluding Perspective</h2>
+  <p>
+    From the tabular updates of Dyna-Q to the transformer imagination of IRIS,
+    world models chart a thirty-five-year arc of deepening insight.
+    Each generation kept the spirit of Dyna-Q—learning an internal simulator
+    and improving policy by planning inside it—while steadily
+    increasing representational richness, training stability, and domain coverage.
+  </p>
+  <p>
+    Today’s best agents learn a compact latent universe,
+    roll out thousands of possible futures per second,
+    and use those dreams to act wisely in the real world.
+    The result is a dramatic improvement in sample efficiency,
+    a unification of planning and learning,
+    and a glimpse of general intelligence.
+    As compute and algorithms continue to improve,
+    the boundary between imagined and real experience will blur even further.
+  </p>
+
+  <h2>References</h2>
+  <p>
+    Sutton, R. (1990). <em>Dyna: An Integrated Architecture for Learning and Planning</em>.<br>
+    Ha, D. &amp; Schmidhuber, J. (2018). <em>World Models</em>.<br>
+    Hafner, D. et al. (2020). <em>Dream to Control</em>.<br>
+    Hafner, D. et al. (2023). <em>Mastering Diverse Domains through World Models</em>.<br>
+    Micheli, V. et al. (2023). <em>Transformers are Sample-Efficient World Models</em>.
+  </p>
+</div>
+<!-- END Part 3 -->
 
-      <p>
-        This inefficiency stems from the fact that model-free methods learn policies directly from raw experience, without building an understanding of the environment's dynamics. In contrast, humans and animals learn by building <em>mental models</em> of the world, allowing them to plan and imagine consequences before acting.
-      </p>
-
-      <div class="key-insight">
-        <strong>Core Insight:</strong> If we can learn accurate models of the environment, we can generate synthetic experience through "imagination" and dramatically reduce the number of real interactions needed.
-      </div>
-
-      <p>
-        <strong>World Models</strong> represent a paradigm shift toward model-based reinforcement learning, where agents learn compact representations of their environment's dynamics and use these models for planning and policy learning. The central research question is:
-      </p>
-
-      <q>Can learned world models significantly improve sample efficiency while scaling to complex, high-dimensional, and diverse domains?</q>
-
-      <div class="section-divider"></div>
-
-      <h2>Mathematical Foundations</h2>
-      
-      <h3>The Model-Based RL Framework</h3>
-      <p>
-        In standard reinforcement learning, an agent interacts with an environment characterized by the tuple \((S, A, T, R, \gamma)\), where:
-      </p>
-      <ul>
-        <li>\(S\) is the state space</li>
-        <li>\(A\) is the action space</li>
-        <li>\(T: S \times A \times S \rightarrow [0,1]\) is the transition function</li>
-        <li>\(R: S \times A \rightarrow \mathbb{R}\) is the reward function</li>
-        <li>\(\gamma \in [0,1)\) is the discount factor</li>
-      </ul>
-
-      <p>
-        The goal is to learn a policy \(\pi: S \rightarrow A\) that maximizes the expected discounted return:
-      </p>
-
-      <div class="math-block">
-        \[J(\pi) = \mathbb{E}_{\tau \sim \pi}\left[\sum_{t=0}^{\infty} \gamma^t r_t\right]\]
-      </div>
-
-      <p>
-        where \(\tau = (s_0, a_0, r_0, s_1, a_1, r_1, \ldots)\) is a trajectory generated by policy \(\pi\).
-      </p>
-
-      <h3>Model Learning Objective</h3>
-      <p>
-        World models learn approximations to the true environment dynamics. Given a dataset \(\mathcal{D} = \{(s_t, a_t, s_{t+1}, r_t)\}_{t=1}^N\) of environment interactions, we learn:
-      </p>
-      
-      <ul>
-        <li><strong>Transition Model:</strong> \(\hat{T}_\theta(s_{t+1} | s_t, a_t)\)</li>
-        <li><strong>Reward Model:</strong> \(\hat{R}_\phi(r_t | s_t, a_t)\)</li>
-      </ul>
-
-      <p>The learning objectives are typically:</p>
-
-      <div class="math-block">
-        \[\mathcal{L}_T(\theta) = \sum_{t=1}^N -\log \hat{T}_\theta(s_{t+1} | s_t, a_t)\]
-        \[\mathcal{L}_R(\phi) = \sum_{t=1}^N \|\hat{R}_\phi(s_t, a_t) - r_t\|^2\]
-      </div>
-
-      <div class="section-divider"></div>
-
-      <h2>Historical Foundation: Dyna-Q Algorithm</h2>
-
-      <p>
-        Richard Sutton's <strong>Dyna-Q</strong> algorithm (1990) established the foundational principle of combining learning and planning in reinforcement learning. The key insight was to interleave real experience with simulated experience generated from a learned model.
-      </p>
-
-      <div class="algorithm-box">
-        <div class="algorithm-title">Dyna-Q Algorithm</div>
-        <strong>Input:</strong> Environment, planning steps \(n\)<br>
-        <strong>Initialize:</strong> Q-table \(Q(s,a)\), model \(M(s,a) \rightarrow (s', r)\)<br><br>
-        
-        <strong>Repeat for each episode:</strong><br>
-        1. <strong>Direct RL:</strong> Take action \(a\) in state \(s\), observe \(r, s'\)<br>
-        2. <strong>Model Learning:</strong> Update \(M(s,a) \leftarrow (s', r)\)<br>
-        3. <strong>Q-Learning Update:</strong> \(Q(s,a) \leftarrow Q(s,a) + \alpha[r + \gamma \max_{a'} Q(s',a') - Q(s,a)]\)<br>
-        4. <strong>Planning:</strong> Repeat \(n\) times:<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;• Sample random previously visited \((s,a)\)<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;• Simulate: \((s', r) = M(s,a)\)<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;• Update: \(Q(s,a) \leftarrow Q(s,a) + \alpha[r + \gamma \max_{a'} Q(s',a') - Q(s,a)]\)
-      </div>
-
-      <h3>Limitations of Tabular Dyna-Q</h3>
-      <p>
-        While groundbreaking, Dyna-Q was limited to discrete, low-dimensional state spaces. The model \(M(s,a)\) was essentially a lookup table, making it unsuitable for:
-      </p>
-      <ul>
-        <li>High-dimensional observations (images, sensor data)</li>
-        <li>Continuous state and action spaces</li>
-        <li>Complex, stochastic dynamics</li>
-        <li>Partial observability</li>
-      </ul>
-
-      <div class="key-insight">
-        <strong>Evolution to Modern World Models:</strong> The core Dyna-Q principle remains unchanged, but modern approaches replace tabular representations with deep neural networks and sophisticated latent representations.
-      </div>
-
-      <div class="section-divider"></div>
-
-      <h2>World Models (Ha & Schmidhuber, 2018)</h2>
-
-      <p>
-        The seminal 2018 paper introduced the modern World Models architecture, establishing a new paradigm for learning in high-dimensional environments like Atari games and continuous control tasks.
-      </p>
-
-      <h3>Architecture Overview</h3>
-      <p>
-        The World Models approach decomposes the learning problem into three distinct components:
-      </p>
-
-      <h4>1. Vision Model (VAE - Variational Autoencoder)</h4>
-      <p>
-        The VAE compresses high-dimensional observations \(x_t\) into compact latent representations \(z_t\):
-      </p>
-
-      <div class="math-block">
-        <strong>Encoder:</strong> \(q_\phi(z_t | x_t)\) - maps observations to latent distributions<br>
-        <strong>Decoder:</strong> \(p_\theta(x_t | z_t)\) - reconstructs observations from latents<br><br>
-        
-        <strong>VAE Loss:</strong><br>
-        \[\mathcal{L}_{VAE} = \mathbb{E}_{q_\phi(z|x)}[\log p_\theta(x|z)] - \beta \cdot KL[q_\phi(z|x) || p(z)]\]
-      </div>
-
-      <p>
-        The latent space \(z \in \mathbb{R}^{32}\) captures the essential visual information while discarding irrelevant details. The KL term enforces a structured prior \(p(z) = \mathcal{N}(0, I)\).
-      </p>
-
-      <h4>2. Memory Model (MDN-RNN)</h4>
-      <p>
-        The Memory Model learns temporal dynamics in the latent space using a Mixture Density Network combined with an LSTM:
-      </p>
-
-      <div class="math-block">
-        \[h_{t+1} = \text{LSTM}(h_t, [z_t, a_t])\]
-        \[p(z_{t+1} | a_t, h_t) = \sum_{k=1}^K \pi_k(h_t, a_t) \cdot \mathcal{N}(\mu_k(h_t, a_t), \sigma_k^2(h_t, a_t))\]
-      </div>
-
-      <p>
-        Where:
-      </p>
-      <ul>
-        <li>\(h_t\) is the hidden state capturing temporal context</li>
-        <li>\(\pi_k, \mu_k, \sigma_k\) are the mixture components, means, and variances</li>
-        <li>The mixture model captures multimodal prediction uncertainty</li>
-      </ul>
-
-      <h4>3. Controller (Evolution Strategies)</h4>
-      <p>
-        The controller is a simple linear policy that maps the current state \([z_t, h_t]\) to actions:
-      </p>
-
-      <div class="math-block">
-        \[a_t = W_c \cdot [z_t, h_t] + b_c\]
-      </div>
-
-      <p>
-        The controller parameters \(\{W_c, b_c\}\) are optimized using Covariance Matrix Adaptation Evolution Strategy (CMA-ES), as the stochastic world model prevents gradient-based optimization.
-      </p>
-
-      <h3>Training Procedure</h3>
-      <div class="algorithm-box">
-        <div class="algorithm-title">World Models Training</div>
-        <strong>Phase 1 - Vision Model Training:</strong><br>
-        • Collect random rollouts from environment<br>
-        • Train VAE to reconstruct observations: \(\min \mathcal{L}_{VAE}\)<br><br>
-        
-        <strong>Phase 2 - Memory Model Training:</strong><br>
-        • Encode all observations to latent vectors using trained VAE<br>
-        • Train MDN-RNN on sequence prediction: \(\min -\log p(z_{t+1} | a_t, h_t)\)<br><br>
-        
-        <strong>Phase 3 - Controller Training:</strong><br>
-        • Use CMA-ES to evolve controller parameters<br>
-        • Evaluate fitness entirely within the learned world model<br>
-        • No additional environment interactions required
-      </div>
-
-      <h3>Key Innovations and Limitations</h3>
-      <div class="comparison-highlight">
-        <strong>Innovations:</strong>
-        <ul>
-          <li>Demonstrated world models could work on complex visual tasks</li>
-          <li>Modular architecture allowing independent component training</li>
-          <li>Compressed representation learning with VAEs</li>
-          <li>Successfully learned car racing and doom navigation</li>
-        </ul>
-        
-        <strong>Limitations:</strong>
-        <ul>
-          <li>Evolution strategies are sample-inefficient for policy learning</li>
-          <li>Cannot propagate gradients through stochastic rollouts</li>
-          <li>Limited to relatively simple environments</li>
-          <li>Separate training phases prevent end-to-end optimization</li>
-        </ul>
-      </div>
-
-      <div class="section-divider"></div>
-
-      <h2>The Dreamer Family: Gradient-Based World Models</h2>
-
-      <p>
-        The Dreamer series represents a significant evolution, enabling end-to-end gradient-based training of world models and policies. This advancement addressed the key limitations of the original World Models approach.
-      </p>
-
-      <h2>Dreamer (Hafner et al., 2020)</h2>
-
-      <h3>Recurrent State-Space Model (RSSM)</h3>
-      <p>
-        Dreamer introduces the RSSM, which separates deterministic and stochastic components of the state representation:
-      </p>
-
-      <div class="math-block">
-        <strong>Deterministic State:</strong> \(h_t = f_\theta(h_{t-1}, z_{t-1}, a_{t-1})\)<br>
-        <strong>Stochastic State:</strong> \(z_t \sim q_\phi(z_t | h_t, x_t)\)<br>
-        <strong>Prior:</strong> \(p_\theta(z_t | h_t)\)<br>
-        <strong>Decoder:</strong> \(p_\theta(x_t | h_t, z_t)\)
-      </div>
-
-      <p>
-        This formulation allows the model to maintain long-term memory in \(h_t\) while capturing observation-specific details in \(z_t\).
-      </p>
-
-      <h3>Variational Objective</h3>
-      <p>
-        The world model is trained using a variational bound on the data likelihood:
-      </p>
-
-      <div class="math-block">
-        \[\mathcal{L}_{model} = \mathbb{E}_{q_\phi}[\underbrace{\log p_\theta(x_t | h_t, z_t)}_{\text{Reconstruction}} - \underbrace{KL[q_\phi(z_t | h_t, x_t) || p_\theta(z_t | h_t)]}_{\text{Regularization}}]\]
-      </div>
-
-      <h3>Actor-Critic in Latent Space</h3>
-      <p>
-        The key innovation is performing policy learning entirely in the learned latent space using imagined rollouts:
-      </p>
-
-      <div class="math-block">
-        <strong>Value Function:</strong> \(V_\psi(s_t) = V_\psi(h_t, z_t)\)<br>
-        <strong>Actor:</strong> \(\pi_\theta(a_t | s_t) = \pi_\theta(a_t | h_t, z_t)\)<br>
-        <strong>Reward Model:</strong> \(r_t = R_\theta(h_t, z_t)\)
-      </div>
-
-      <h4>Imagination Rollouts</h4>
-      <p>
-        Starting from real latent states, Dreamer generates imagined trajectories:
-      </p>
-
-      <div class="algorithm-box">
-        <div class="algorithm-title">Imagination Rollout Generation</div>
-        <strong>Input:</strong> Initial state \((h_0, z_0)\), horizon \(H\)<br><br>
-        
-        <strong>For</strong> \(t = 1, 2, \ldots, H\):<br>
-        1. Sample action: \(a_t \sim \pi_\theta(a_t | h_{t-1}, z_{t-1})\)<br>
-        2. Predict deterministic state: \(h_t = f_\theta(h_{t-1}, z_{t-1}, a_t)\)<br>
-        3. Sample stochastic state: \(z_t \sim p_\theta(z_t | h_t)\)<br>
-        4. Predict reward: \(r_t = R_\theta(h_t, z_t)\)<br>
-        5. Estimate value: \(v_t = V_\psi(h_t, z_t)\)
-      </div>
-
-      <h4>Policy Gradients with Reparameterization</h4>
-      <p>
-        The reparameterization trick enables gradient flow through stochastic sampling:
-      </p>
-
-      <div class="math-block">
-        \begin{align}
-        z_t &= \mu_\theta(h_t) + \sigma_\theta(h_t) \odot \epsilon, \quad \epsilon \sim \mathcal{N}(0, I)\\[0.5em]
-        \nabla_\theta \E[f(z_t)] &= \E[\nabla_\theta f(z_t)]
-        \end{align}
-      </div>
-
-      <p>
-        This allows the actor and critic to be trained with standard policy gradient methods like PPO or actor-critic, but on imagined data.
-      </p>
-
-      <h3>Training Algorithm</h3>
-      <div class="algorithm-box">
-        <div class="algorithm-title">Dreamer Training Loop</div>
-        <strong>Repeat:</strong><br>
-        1. <strong>Environment Interaction:</strong> Collect episodes using current policy<br>
-        2. <strong>Model Learning:</strong> Update world model on replay buffer<br>
-        3. <strong>Imagination:</strong> Generate imagined rollouts from model<br>
-        4. <strong>Behavior Learning:</strong> Update actor and critic on imagined data<br>
-        5. <strong>Repeat</strong> steps 3-4 multiple times per environment step
-      </div>
-
-      <div class="section-divider"></div>
-
-      <h2>DreamerV2 (2021): Categorical Representations</h2>
-
-      <h3>Categorical Latents</h3>
-      <p>
-        DreamerV2 replaces Gaussian latent variables with categorical distributions:
-      </p>
-
-      <div class="math-block">
-        \[z_t \in \{0, 1\}^{32 \times 32} \text{ (one-hot across 32 classes, 32 variables)}\]
-        \[p_\theta(z_t | h_t) = \prod_{i=1}^{32} \text{Categorical}(\pi_i(h_t))\]
-      </div>
-
-      <h3>Straight-Through Gumbel Softmax</h3>
-      <p>
-        To enable gradient flow through discrete sampling:
-      </p>
-
-      <div class="math-block">
-        <strong>Forward:</strong> \(\hat{z}_t = \mathbb{I}(\arg\max(\log \pi + g))\)<br>
-        <strong>Backward:</strong> \(\nabla_\theta \hat{z}_t = \nabla_\theta \text{softmax}(\log \pi / \tau)\)
-      </div>
-
-      <p>
-        Where \(g\) are Gumbel noise samples and \(\tau\) is the temperature parameter.
-      </p>
-
-      <h3>Advantages of Categorical Representations</h3>
-      <ul>
-        <li><strong>Expressiveness:</strong> Can represent complex, multimodal distributions</li>
-        <li><strong>Stability:</strong> Discrete variables are less prone to posterior collapse</li>
-        <li><strong>Interpretability:</strong> Each category can specialize for specific concepts</li>
-        <li><strong>Generalization:</strong> Better performance across diverse domains</li>
-      </ul>
-
-      <div class="section-divider"></div>
-
-      <h2>DreamerV3 (2023): Mastering Diverse Domains</h2>
-
-      <p>
-        DreamerV3 represents the current state-of-the-art in world models, demonstrating remarkable performance across an unprecedented range of domains: Atari, DMControl, Crafter, and more.
-      </p>
-
-      <h3>Symlog Predictions</h3>
-      <p>
-        One of the key innovations is the symlog transformation for stabilizing value learning:
-      </p>
-
-      <div class="math-block">
-        \[\text{symlog}(x) = \text{sign}(x) \ln(|x| + 1)\]
-        \[\text{symexp}(x) = \text{sign}(x) (\exp(|x|) - 1)\]
-      </div>
-
-      <p>
-        This transformation:
-      </p>
-      <ul>
-        <li>Grows linearly for small values (\(|x| < 1\))</li>
-        <li>Grows logarithmically for large values (\(|x| > 1\))</li>
-        <li>Handles both positive and negative values</li>
-        <li>Prevents gradient explosion with large rewards/values</li>
-      </ul>
-
-      <h3>Free Bits Regularization</h3>
-      <p>
-        To prevent posterior collapse while maintaining model expressiveness:
-      </p>
-
-      <div class="math-block">
-        \[KL_{free}[q || p] = \max(\beta \cdot KL[q || p], \text{free bits})\]
-      </div>
-
-      <p>
-        This ensures each latent dimension contributes at least \(\text{free bits}\) of information, preventing the model from ignoring latent variables.
-      </p>
-
-      <h3>Layer Normalization and EMA</h3>
-      <p>
-        DreamerV3 incorporates several architectural improvements:
-      </p>
-      <ul>
-        <li><strong>Layer Normalization:</strong> Applied to all network layers for training stability</li>
-        <li><strong>Exponential Moving Average:</strong> Target networks updated as \(\theta_{target} \leftarrow \tau \theta + (1-\tau) \theta_{target}\)</li>
-        <li><strong>Unimix Regularization:</strong> Mixes categorical distributions with uniform distributions</li>
-      </ul>
-
-      <h3>Unified Training</h3>
-      <div class="algorithm-box">
-        <div class="algorithm-title">DreamerV3 Unified Training</div>
-        <strong>For each environment step:</strong><br>
-        1. Execute policy in environment, add to replay buffer<br>
-        2. Sample batch from replay buffer<br>
-        3. <strong>World Model Loss:</strong><br>
-        &nbsp;&nbsp;&nbsp;&nbsp;\(\mathcal{L}_{pred} = -\log p(x_{t+1} | h_t, z_t, a_t)\)<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;\(\mathcal{L}_{dyn} = KL_{free}[q(z_{t+1} | h_{t+1}, x_{t+1}) || p(z_{t+1} | h_t)]\)<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;\(\mathcal{L}_{repr} = KL_{free}[q(z_t | h_t, x_t) || z_t^{-}]\) (stop gradient on \(z_t^{-}\))<br>
-        4. <strong>Actor-Critic Loss:</strong> Compute on imagined rollouts<br>
-        5. Update all networks simultaneously
-      </div>
-
-      <div class="section-divider"></div>
-
-      <h2>IRIS (2025): Transformers as World Models</h2>
-
-      <p>
-        IRIS represents the latest evolution in world models, leveraging the transformer architecture that has revolutionized natural language processing and computer vision.
-      </p>
-
-      <h3>Discrete Autoencoder</h3>
-      <p>
-        Instead of continuous VAEs, IRIS uses discrete autoencoders similar to VQ-VAE:
-      </p>
-
-      <h3>Discrete Autoencoder</h3>
-      <p>
-        Instead of continuous VAEs, IRIS uses discrete autoencoders similar to VQ-VAE:
-      </p>
-
-      <div class="math-block">
-        \begin{align}
-        \text{Encoder: } &E_\phi: \mathbb{R}^{H \times W \times C} \rightarrow \{1, 2, \ldots, K\}^{h \times w}\\[0.3em]
-        \text{Decoder: } &D_\theta: \{1, 2, \ldots, K\}^{h \times w} \rightarrow \mathbb{R}^{H \times W \times C}\\[0.3em]
-        \text{Codebook: } &\mathbf{e} \in \mathbb{R}^{K \times d}
-        \end{align}
-      </div>
-
-      <p>
-        Where observations are tokenized into discrete symbols from a learned vocabulary of size \(K\). Each token represents a patch of the original image, compressed into a discrete identifier.
-      </p>
-
-      <h3>Transformer World Model</h3>
-      <p>
-        The core innovation is using transformers to model the dynamics in token space:
-      </p>
-
-      <div class="math-block">
-        \begin{align}
-        \text{Input sequence: } &\tau = [s_0, a_0, r_0, s_1, a_1, r_1, \ldots, s_t]\\[0.3em]
-        \text{Token sequence: } &\mathbf{z} = \text{Tokenize}(\tau)\\[0.3em]
-        \text{Transformer: } &p(\mathbf{z}_{t+1} \mid \mathbf{z}_{\leq t}) = \text{Transformer}(\mathbf{z}_{\leq t})
-        \end{align}
-      </div>
-
-      <h4>Autoregressive Generation</h4>
-      <p>
-        IRIS generates future trajectories by autoregressively sampling from the transformer:
-      </p>
-
-      <div class="algorithm-box">
-        <div class="algorithm-title">IRIS Imagination Rollout</div>
-        <strong>Input:</strong> Current state tokens \(\mathbf{z}_t\), action \(a_t\), horizon \(H\)<br><br>
-        
-        <strong>For</strong> \(i = 1, 2, \ldots, H\):<br>
-        1. Append action token: \(\mathbf{z} = [\mathbf{z}, \text{tok}(a_t)]\)<br>
-        2. Sample reward token: \(r_{t+i} \sim p(\cdot \mid \mathbf{z})\)<br>
-        3. Append reward: \(\mathbf{z} = [\mathbf{z}, \text{tok}(r_{t+i})]\)<br>
-        4. Sample next state tokens: \(\mathbf{s}_{t+i} \sim p(\cdot \mid \mathbf{z})\)<br>
-        5. Append state: \(\mathbf{z} = [\mathbf{z}, \mathbf{s}_{t+i}]\)<br>
-        6. Sample next action: \(a_{t+i} \sim \pi(\cdot \mid \mathbf{s}_{t+i})\)
-      </div>
-
-      <h3>Policy Learning on Tokens</h3>
-      <p>
-        The policy and value function operate directly on discrete tokens:
-      </p>
-
-      <div class="math-block">
-        \begin{align}
-        \text{Policy: } &\pi_\theta(a \mid \mathbf{s}) \text{ where } \mathbf{s} \text{ are state tokens}\\[0.3em]
-        \text{Value: } &V_\psi(\mathbf{s}) \text{ estimated on token representations}\\[0.3em]
-        \text{Advantage: } &A(\mathbf{s}, a) = Q(\mathbf{s}, a) - V(\mathbf{s})
-        \end{align}
-      </div>
-
-      <h3>Training Objective</h3>
-      <p>
-        IRIS optimizes three main components simultaneously:
-      </p>
-
-      <div class="math-block">
-        \begin{align}
-        \mathcal{L}_{\text{world}} &= -\sum_{t} \log p(\mathbf{z}_{t+1} \mid \mathbf{z}_{\leq t}) \quad \text{(World Model)}\\[0.5em]
-        \mathcal{L}_{\text{actor}} &= -\sum_{t} \log \pi(a_t \mid \mathbf{s}_t) A_t \quad \text{(Policy Gradient)}\\[0.5em]
-        \mathcal{L}_{\text{critic}} &= \sum_{t} \left(V(\mathbf{s}_t) - V_{\text{target}}\right)^2 \quad \text{(Value Learning)}
-        \end{align}
-      </div>
-
-      <h3>Advantages of the Transformer Approach</h3>
-      <ul>
-        <li><strong>Long-horizon Planning:</strong> Attention mechanism captures long-range dependencies</li>
-        <li><strong>Scalability:</strong> Leverages existing transformer infrastructure and optimizations</li>
-        <li><strong>Interpretability:</strong> Discrete tokens provide interpretable intermediate representations</li>
-        <li><strong>Sample Efficiency:</strong> Achieves state-of-the-art performance on Atari-100k benchmark</li>
-        <li><strong>Modality Agnostic:</strong> Can handle diverse input types through tokenization</li>
-      </ul>
-
-      <div class="section-divider"></div>
-
-      <h2>Performance Timeline and Comparison</h2>
-
-      <h3>Sample Efficiency Evolution</h3>
-      <p>
-        The progression of world models has led to dramatic improvements in sample efficiency:
-      </p>
-
-      <table>
-        <tr>
-          <th>Method</th>
-          <th>Sample Efficiency</th>
-          <th>Latent Representation</th>
-          <th>Policy Optimization</th>
-          <th>Key Innovation</th>
-        </tr>
-        <tr>
-          <td>Dyna-Q (1990)</td>
-          <td>Low</td>
-          <td>Tabular states</td>
-          <td>Q-learning + Planning</td>
-          <td>Learning + Planning paradigm</td>
-        </tr>
-        <tr>
-          <td>World Models (2018)</td>
-          <td>Medium</td>
-          <td>Continuous (VAE)</td>
-          <td>Evolution Strategies</td>
-          <td>Deep latent dynamics</td>
-        </tr>
-        <tr>
-          <td>Dreamer (2020)</td>
-          <td>High</td>
-          <td>Gaussian latents (RSSM)</td>
-          <td>Actor-Critic</td>
-          <td>Gradient-based imagination</td>
-        </tr>
-        <tr>
-          <td>DreamerV2 (2021)</td>
-          <td>High</td>
-          <td>Categorical latents</td>
-          <td>Actor-Critic</td>
-          <td>Discrete representations</td>
-        </tr>
-        <tr>
-          <td>DreamerV3 (2023)</td>
-          <td>Very High</td>
-          <td>Categorical + Symlog</td>
-          <td>Actor-Critic</td>
-          <td>Domain generalization</td>
-        </tr>
-        <tr>
-          <td>IRIS (2025)</td>
-          <td>Exceptional</td>
-          <td>Discrete tokens</td>
-          <td>Transformer-based AC</td>
-          <td>Autoregressive world models</td>
-        </tr>
-      </table>
-
-      <h3>Benchmark Performance</h3>
-      <div class="comparison-highlight">
-        <strong>Atari 100k Benchmark Results:</strong>
-        <ul>
-          <li><strong>Rainbow DQN:</strong> 0.65 human-normalized score</li>
-          <li><strong>Dreamer:</strong> 0.89 human-normalized score</li>
-          <li><strong>DreamerV2:</strong> 1.19 human-normalized score</li>
-          <li><strong>DreamerV3:</strong> 1.72 human-normalized score</li>
-          <li><strong>IRIS:</strong> 2.11 human-normalized score</li>
-        </ul>
-        
-        <strong>DMControl Suite:</strong>
-        <ul>
-          <li><strong>SAC:</strong> 748 average score (1M steps)</li>
-          <li><strong>Dreamer:</strong> 786 average score (1M steps)</li>
-          <li><strong>DreamerV3:</strong> 852 average score (1M steps)</li>
-          <li><strong>IRIS:</strong> 901 average score (500k steps)</li>
-        </ul>
-      </div>
-
-      <div class="section-divider"></div>
-
-      <h2>Architectural Evolution and Design Principles</h2>
-
-      <h3>Representation Learning</h3>
-      <p>
-        The evolution of world models reflects different approaches to learning state representations:
-      </p>
-
-      <h4>Continuous vs. Discrete Representations</h4>
-      <div class="math-block">
-        \begin{align}
-        \text{Continuous (VAE): } &z \sim \mathcal{N}(\mu, \sigma^2) \in \mathbb{R}^d\\[0.3em]
-        \text{Categorical: } &z \sim \text{Cat}(\pi) \in \{0, 1\}^{K \times C}\\[0.3em]
-        \text{Discrete Tokens: } &z \in \{1, 2, \ldots, V\}^L
-        \end{align}
-      </div>
-
-      <p>
-        Each representation type offers different trade-offs:
-      </p>
-      <ul>
-        <li><strong>Continuous:</strong> Smooth interpolation, but prone to posterior collapse</li>
-        <li><strong>Categorical:</strong> Structured representations, better for discrete concepts</li>
-        <li><strong>Tokens:</strong> Compositional, interpretable, leverages NLP advances</li>
-      </ul>
-
-      <h3>Temporal Modeling</h3>
-      <p>
-        Different architectures handle temporal dependencies:
-      </p>
-
-      <div class="comparison-highlight">
-        <strong>RNN-based (Dreamer family):</strong>
-        <ul>
-          <li>Recurrent hidden state maintains memory</li>
-          <li>Efficient for sequential processing</li>
-          <li>Limited context window</li>
-        </ul>
-        
-        <strong>Transformer-based (IRIS):</strong>
-        <ul>
-          <li>Self-attention over full sequence</li>
-          <li>Parallel processing during training</li>
-          <li>Longer-range dependencies</li>
-          <li>Computational complexity \(O(L^2)\) in sequence length</li>
-        </ul>
-      </div>
-
-      <div class="section-divider"></div>
-
-      <h2>Key Insights and Lessons Learned</h2>
-
-      <h3>Critical Success Factors</h3>
-      <div class="key-insight">
-        <strong>1. Representation Quality:</strong> The choice of latent representation (Gaussian, categorical, tokens) dramatically affects imagination quality and downstream performance.
-      </div>
-
-      <div class="key-insight">
-        <strong>2. Model Capacity vs. Overfitting:</strong> World models must be expressive enough to capture environment complexity while avoiding overfitting to limited data.
-      </div>
-
-      <div class="key-insight">
-        <strong>3. Training Stability:</strong> Techniques like symlog normalization, free bits regularization, and layer normalization are crucial for stable training.
-      </div>
-
-      <div class="key-insight">
-        <strong>4. Planning Horizon:</strong> Longer imagination horizons generally improve performance, but require more accurate world models to prevent compounding errors.
-      </div>
-
-      <h3>Common Challenges</h3>
-      <ul>
-        <li><strong>Model Bias:</strong> Learned models may have systematic errors that affect policy learning</li>
-        <li><strong>Distributional Shift:</strong> Policies may visit states not well-covered by the training data</li>
-        <li><strong>Reward Learning:</strong> Accurately predicting sparse or complex rewards remains challenging</li>
-        <li><strong>Computational Cost:</strong> Training world models adds significant computational overhead</li>
-      </ul>
-
-      <h3>Design Guidelines</h3>
-      <ol>
-        <li><strong>Start Simple:</strong> Begin with basic architectures before adding complexity</li>
-        <li><strong>Regularize Appropriately:</strong> Balance model expressiveness with generalization</li>
-        <li><strong>Validate Imagination:</strong> Regularly check that imagined rollouts remain realistic</li>
-        <li><strong>Iterate on Representations:</strong> The latent space design is often the most critical choice</li>
-        <li><strong>Consider Domain Properties:</strong> Tailor architectures to specific environment characteristics</li>
-      </ol>
-
-      <div class="section-divider"></div>
-
-      <h2>Future Directions and Open Problems</h2>
-
-      <h3>Multimodal World Models</h3>
-      <p>
-        Current world models primarily focus on visual observations. Future work includes:
-      </p>
-      <ul>
-        <li><strong>Multi-sensory Integration:</strong> Combining vision, audio, tactile, and proprioceptive signals</li>
-        <li><strong>Language Grounding:</strong> Incorporating natural language instructions and descriptions</li>
-        <li><strong>Cross-modal Transfer:</strong> Learning representations that generalize across sensory modalities</li>
-      </ul>
-
-      <h3>Hierarchical Planning</h3>
-      <p>
-        Extending world models to hierarchical decision making:
-      </p>
-      <div class="math-block">
-        \begin{align}
-        \text{High-level: } &g_t \sim \pi_{\text{high}}(g \mid s_t) \quad \text{(Goal selection)}\\[0.3em]
-        \text{Low-level: } &a_t \sim \pi_{\text{low}}(a \mid s_t, g_t) \quad \text{(Goal execution)}
-        \end{align}
-      </div>
-
-      <h3>Meta-Learning and Few-Shot Adaptation</h3>
-      <p>
-        Learning world models that can quickly adapt to new environments:
-      </p>
-      <ul>
-        <li><strong>Meta-World Models:</strong> Learning to learn environment dynamics</li>
-        <li><strong>In-Context Learning:</strong> Adapting to new tasks through context without parameter updates</li>
-        <li><strong>Transfer Learning:</strong> Leveraging learned representations across domains</li>
-      </ul>
-
-      <h3>Theoretical Understanding</h3>
-      <p>
-        Open theoretical questions:
-      </p>
-      <ul>
-        <li><strong>Sample Complexity:</strong> Theoretical bounds on sample efficiency improvements</li>
-        <li><strong>Model Expressiveness:</strong> What level of model accuracy is sufficient for good policies?</li>
-        <li><strong>Generalization Bounds:</strong> When do learned world models generalize to new scenarios?</li>
-        <li><strong>Optimization Landscape:</strong> Understanding the joint optimization of models and policies</li>
-      </ul>
-
-      <div class="section-divider"></div>
-
-      <h2>Practical Implementation Guidelines</h2>
-
-      <h3>Getting Started with World Models</h3>
-      <div class="algorithm-box">
-        <div class="algorithm-title">Implementation Roadmap</div>
-        <strong>Phase 1 - Environment Analysis:</strong><br>
-        • Analyze observation space (continuous, discrete, mixed)<br>
-        • Identify key environment properties (deterministic, stochastic)<br>
-        • Determine appropriate planning horizon<br><br>
-        
-        <strong>Phase 2 - Architecture Selection:</strong><br>
-        • Choose representation type (continuous, categorical, tokens)<br>
-        • Select temporal model (RNN, Transformer)<br>
-        • Design encoder/decoder architecture<br><br>
-        
-        <strong>Phase 3 - Implementation:</strong><br>
-        • Start with simple baseline (e.g., Dreamer)<br>
-        • Implement proper regularization<br>
-        • Add domain-specific modifications<br><br>
-        
-        <strong>Phase 4 - Validation:</strong><br>
-        • Visualize learned representations<br>
-        • Check imagination quality<br>
-        • Compare against model-free baselines
-      </div>
-
-      <h3>Hyperparameter Guidelines</h3>
-      <table>
-        <tr>
-          <th>Component</th>
-          <th>Key Hyperparameters</th>
-          <th>Typical Values</th>
-          <th>Notes</th>
-        </tr>
-        <tr>
-          <td>VAE/Encoder</td>
-          <td>Latent dimension, β weight</td>
-          <td>32-256, β=1e-4 to 1e-2</td>
-          <td>Higher β for more structured latents</td>
-        </tr>
-        <tr>
-          <td>RNN/Memory</td>
-          <td>Hidden size, sequence length</td>
-          <td>200-1000, 50-200 steps</td>
-          <td>Larger for complex environments</td>
-        </tr>
-        <tr>
-          <td>Actor-Critic</td>
-          <td>Imagination horizon, learning rate</td>
-          <td>15-50 steps, 1e-4 to 3e-4</td>
-          <td>Longer horizons for strategic tasks</td>
-        </tr>
-        <tr>
-          <td>Training</td>
-          <td>Replay buffer size, batch size</td>
-          <td>1M-5M transitions, 32-128</td>
-          <td>Larger buffers for off-policy stability</td>
-        </tr>
-      </table>
-
-      <div class="section-divider"></div>
-
-      <h2>Conclusion</h2>
-
-      <p>
-        World Models represent a fundamental shift in reinforcement learning, moving from purely reactive policies to agents that build and reason with internal models of their environment. The journey from Dyna-Q's simple tabular approach to IRIS's sophisticated transformer-based world models demonstrates the power of combining classical RL insights with modern deep learning advances.
-      </p>
-
-      <p>
-        Key achievements of the world models paradigm include:
-      </p>
-      <ul>
-        <li><strong>Dramatic sample efficiency improvements:</strong> From millions of interactions to thousands</li>
-        <li><strong>Unified learning framework:</strong> Single approach works across diverse domains</li>
-        <li><strong>Interpretable representations:</strong> Learned models provide insights into environment structure</li>
-        <li><strong>Planning and learning integration:</strong> Seamless combination of model-based and model-free methods</li>
-      </ul>
-
-      <p>
-        Looking forward, world models are poised to play an increasingly important role in artificial intelligence, particularly as we move toward more general, adaptable agents. The combination of large-scale pre-training, multimodal learning, and hierarchical planning promises to unlock new capabilities in complex, real-world environments.
-      </p>
-
-      <div class="key-insight">
-        <strong>Final Insight:</strong> The success of world models demonstrates that building internal representations of the world is not just useful—it's essential for creating truly intelligent, sample-efficient agents that can plan, reason, and adapt in complex environments.
-      </div>
-
-      <h2>References</h2>
-      <p>
-        <strong>Sutton, R. S.</strong> (1990). <em>Integrated modeling and control based on reinforcement learning and dynamic programming</em>. NIPS.<br><br>
-        
-        <strong>Ha, D., & Schmidhuber, J.</strong> (2018). <em>World Models</em>. NeurIPS.<br><br>
-        
-        <strong>Hafner, D., Lillicrap, T., Ba, J., & Norouzi, M.</strong> (2019). <em>Learning Latent Dynamics for Planning from Pixels</em>. ICML.<br><br>
-        
-        <strong>Hafner, D., Lillicrap, T., Fischer, M., Villegas, R., Ha, D., Lee, H., & Davidson, J.</strong> (2020). <em>Dream to Control: Learning Behaviors by Latent Imagination</em>. ICLR.<br><br>
-        
-      </p>
-
-      <!-- Footer -->
-      <div class="footer">
-        This comprehensive blog post is based on the <strong>DeepRL Course Poster Session (Spring 2025)</strong><br>
-        For more resources and course materials: <a href="https://deeprlcourse.github.io/">https://deeprlcourse.github.io/</a><br>
-        <em>Last updated: September 2025</em>
-      </div>
-    </div>
   </body>
 </html>
